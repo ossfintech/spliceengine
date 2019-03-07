@@ -827,6 +827,7 @@
                                 <classpath/>
                                 <argument>${jacocoAgent}</argument>
                                 <argument>-Xdebug</argument>
+                                <argument>-Dsplice.spark.major.version=${spark.major.version}</argument>
                                 <argument>-Djava.security.krb5.conf=${project.build.directory}/krb5.conf</argument>
                                 <argument>-Dlog4j.configuration=${log4j.config.uri}</argument>
                                 <argument>-XX:MinHeapFreeRatio=10</argument>

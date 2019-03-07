@@ -154,6 +154,17 @@ public class NativeSparkDataSet<V> implements DataSet<V> {
         }
     }
 
+    // Build a Native Spark Dataset from the context of the consumer operation.
+    // Only works for an op with a single child op... not joins.
+    public NativeSparkDataSet(JavaRDD<V> rdd, OperationContext context) {
+        this(NativeSparkDataSet.<V>sourceRDDToSparkRow(rdd, context), context);
+        try {
+            this.execRow = context.getOperation().getLeftOperation().getExecRowDefinition();
+        } catch (Exception e) {
+            throw Exceptions.throwAsRuntime(e);
+        }
+    }
+
     @Override
     public int partitions() {
         return dataset.rdd().getNumPartitions();
@@ -438,9 +449,14 @@ public class NativeSparkDataSet<V> implements DataSet<V> {
 
         OperationContext<Op> context = f.operationContext;
         if (f.hasNativeSparkImplementation()) {
-            Pair<Dataset<Row>, OperationContext> pair = f.nativeTransformation(dataset, context);
-            OperationContext c = pair.getSecond() == null ? this.context : pair.getSecond();
-            return new NativeSparkDataSet<>(pair.getFirst(), c);
+            //try {  msirek-temp
+                Pair<Dataset<Row>, OperationContext> pair = f.nativeTransformation(dataset, context);
+                OperationContext c = pair.getSecond() == null ? this.context : pair.getSecond();
+                return new NativeSparkDataSet<>(pair.getFirst(), c);
+            //}
+            //catch (Exception e) {
+                // Switch back to non-native DataSet if the filter is not supported.
+           // }
         }
         try {
             return new SparkDataSet<>(NativeSparkDataSet.<V>toSpliceLocatedRow(dataset, this.context)).filter(f, isLast, pushScope, scopeDetail);
@@ -839,6 +855,27 @@ public class NativeSparkDataSet<V> implements DataSet<V> {
     }
 
     /**
+     * Take a Splice DataSet in the consumer's context, with a single source,
+     * and convert it to a Spark Dataset doing a map.
+     * @param context
+     * @return
+     * @throws Exception
+     */
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    static <V> Dataset<Row> sourceRDDToSparkRow(JavaRDD<V> rdd, OperationContext context) {
+        try {
+            return SpliceSpark.getSession()
+                    .createDataFrame(
+                            rdd.map(new LocatedRowToRowFunction()),
+                            context.getOperation().getLeftOperation()
+                                    .getExecRowDefinition()
+                                    .schema());
+        } catch (Exception e) {
+            throw Exceptions.throwAsRuntime(e);
+        }
+    }
+
+    /**
      * Take a spark dataset and translate that to Splice format
      * @param dataSet
      * @param context
@@ -1057,6 +1094,11 @@ public class NativeSparkDataSet<V> implements DataSet<V> {
     @Override
     public TableSamplerBuilder sample(OperationContext operationContext) throws StandardException {
         return new SparkTableSamplerBuilder(this, this.context);
+    }
+
+    @Override
+    public DataSet upgradeToSparkNativeDataSet(OperationContext operationContext) {
+         return this;
     }
 
 }

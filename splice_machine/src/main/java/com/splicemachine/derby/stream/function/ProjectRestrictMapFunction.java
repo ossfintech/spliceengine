@@ -36,6 +36,7 @@ public class ProjectRestrictMapFunction<Op extends SpliceOperation> extends Spli
     protected boolean initialized;
     protected ProjectRestrictOperation op;
     protected ExecutionFactory executionFactory;
+    private   String [] expressions = null;
 
     public ProjectRestrictMapFunction() {
         super();
@@ -43,6 +44,11 @@ public class ProjectRestrictMapFunction<Op extends SpliceOperation> extends Spli
 
     public ProjectRestrictMapFunction(OperationContext<Op> operationContext) {
         super(operationContext);
+    }
+
+    public ProjectRestrictMapFunction(OperationContext<Op> operationContext, String[] expressions) {
+        super(operationContext);
+        this.expressions = expressions;
     }
 
     @Override
@@ -68,19 +74,28 @@ public class ProjectRestrictMapFunction<Op extends SpliceOperation> extends Spli
     @Override
     public boolean hasNativeSparkImplementation() {
         ProjectRestrictOperation op = (ProjectRestrictOperation) operationContext.getOperation();
-        if (op.projection != null)
+        if (op.projection != null) {
+            if (!op.hasExpressions())
             return false;
+        }
         return true;
     }
 
     @Override
     public Pair<Dataset<Row>, OperationContext> nativeTransformation(Dataset<Row> input, OperationContext context) {
         ProjectRestrictOperation op = (ProjectRestrictOperation) operationContext.getOperation();
-        int[] mapping = op.projectMapping;
-        Column[] columns = new Column[mapping.length];
-        for (int i = 0; i < mapping.length; ++i) {
-            columns[i] = input.col("c"+(mapping[i] - 1));
+        Dataset<Row> df = null;
+        if (op.hasExpressions()) {
+            df = input.selectExpr(op.getExpressions());
         }
-        return Pair.newPair(input.select(columns), context);
+        else {
+            int[] mapping = op.projectMapping;
+            Column[] columns = new Column[mapping.length];
+            for (int i = 0; i < mapping.length; ++i) {
+                columns[i] = input.col("c" + (mapping[i] - 1));
+            }
+            df = input.select(columns);
+        }
+        return Pair.newPair(df, context);
     }
 }

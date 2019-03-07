@@ -35,6 +35,7 @@ import com.splicemachine.db.catalog.types.ReferencedColumnsDescriptorImpl;
 import com.splicemachine.db.iapi.error.StandardException;
 import com.splicemachine.db.iapi.reference.ClassName;
 import com.splicemachine.db.iapi.services.classfile.VMOpcode;
+import com.splicemachine.db.iapi.services.compiler.LocalField;
 import com.splicemachine.db.iapi.services.compiler.MethodBuilder;
 import com.splicemachine.db.iapi.services.context.ContextManager;
 import com.splicemachine.db.iapi.services.sanity.SanityManager;
@@ -49,6 +50,7 @@ import com.splicemachine.db.impl.ast.RSUtils;
 import org.spark_project.guava.base.Joiner;
 import org.spark_project.guava.collect.Lists;
 
+import java.lang.reflect.Modifier;
 import java.util.*;
 
 /**
@@ -1169,6 +1171,60 @@ public class ProjectRestrictNode extends SingleChildResultSetNode{
     }
 
     /**
+     * Generate a new array with "numberOfValues" Strings and place it on the stack.
+     *
+     * @param acb            The ActivationClassBuilder for the class we're building
+     * @param mb             The MethodBuilder on whose stack to place the String[].
+     * @param resultColumns  The expressions to add to the list.
+     * @return The field that holds the list data
+     */
+    public static void
+    generateExpressionListOnStack(ExpressionClassBuilder acb, MethodBuilder mb, ResultColumnList resultColumns) {
+
+        //MethodBuilder mb = acb.getConstructor();
+        //acb.pushGetExecutionFactoryExpression(mb); // instance
+        boolean genExpressions = resultColumns != null;
+        int numberOfValues = genExpressions ? resultColumns.size() : 0;
+
+        String [] expressions = new String[numberOfValues];
+
+        int i = 0;
+        if (genExpressions) {
+            for (ResultColumn rc : resultColumns) {
+                expressions[i] = OperatorToString.opToSparkString(rc.getExpression());
+                if (expressions[i] == null) {
+                    genExpressions = false;
+                    numberOfValues = 0;
+                    break;
+                }
+                i++;
+            }
+        }
+
+        String stringClassName = "java.lang.String";
+        LocalField arrayField = acb.newFieldDeclaration(
+		                            Modifier.PRIVATE, stringClassName + "[]");
+        mb.pushNewArray(stringClassName, numberOfValues);
+        mb.setField(arrayField);
+
+        i = 0;
+        if (genExpressions) {
+            SparkExpressionGenerator seg = new SparkExpressionGenerator();
+            // Now copy the strings we built previously into the String[].
+            for (ResultColumn rc : resultColumns) {
+                mb.getField(arrayField);
+                mb.push(expressions[i]);
+                mb.setArrayElement(i++);
+            }
+        }
+
+        // Now push the String array we just built on the stack.
+        mb.getField(arrayField);
+
+        //mb.callMethod(VMOpcode.INVOKEINTERFACE, ClassName.ExecutionFactory, "getExpressionList", "java.util.ArrayList", numberOfValues);
+    }
+
+    /**
      * Logic shared by generate() and generateResultSet().
      *
      * @param acb The ExpressionClassBuilder for the class being built
@@ -1327,6 +1383,7 @@ public class ProjectRestrictNode extends SingleChildResultSetNode{
 		 * Reflection is not needed if all of the columns map directly to source
 		 * columns.
 		 */
+		boolean canUseSparkSQLExpressions = false;
         if(reflectionNeededForProjection()){
             // for the resultColumns, we generate a userExprFun
             // that creates a new row from expressions against
@@ -1338,7 +1395,7 @@ public class ProjectRestrictNode extends SingleChildResultSetNode{
             // as-is, with the performance trade-off as discussed above.)
 
 			/* Generate the Row function for the projection */
-            resultColumns.generateCore(acb,mb,false);
+            canUseSparkSQLExpressions = resultColumns.generateCore(acb,mb,false);
         }else{
             mb.pushNull(ClassName.GeneratedMethod);
         }
@@ -1388,7 +1445,14 @@ public class ProjectRestrictNode extends SingleChildResultSetNode{
         mb.push(costEstimate.getEstimatedCost());
         mb.push(printExplainInformationForActivation());
 
-        mb.callMethod(VMOpcode.INVOKEINTERFACE,null,"getProjectRestrictResultSet", ClassName.NoPutResultSet,12);
+        String filterPred = OperatorToString.opToSparkString(restriction);
+        if (filterPred == null)
+            filterPred = "";
+        mb.push(filterPred);
+
+        ProjectRestrictNode.generateExpressionListOnStack(acb, mb, canUseSparkSQLExpressions ? resultColumns : null);
+
+        mb.callMethod(VMOpcode.INVOKEINTERFACE,null,"getProjectRestrictResultSet", ClassName.NoPutResultSet,14);
     }
 
     /**
