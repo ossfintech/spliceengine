@@ -135,7 +135,7 @@ public abstract class BaseJoinStrategy implements JoinStrategy{
                                       int partitionReferenceItem
                                       )
             throws StandardException{
-        mb.push(innerTable.getBaseTableName());
+        mb.push(innerTable.getBaseTableName()); // 18
         //User may have supplied optimizer overrides in the sql
         //Pass them onto execute phase so it can be shown in
         //run time statistics.
@@ -159,7 +159,7 @@ public abstract class BaseJoinStrategy implements JoinStrategy{
         }
 
         // Whether or not the conglomerate is the backing index for a constraint
-        mb.push(cd.isConstraint());
+        mb.push(cd.isConstraint()); // 21
 
         // tell it whether it's to open for update, which we should do if
         // it's an update or delete statement, or if it's the target
@@ -174,7 +174,7 @@ public abstract class BaseJoinStrategy implements JoinStrategy{
 
         mb.push(tableLocked);
 
-        mb.push(isolationLevel);
+        mb.push(isolationLevel); // 27
 
 		/* 1 row scans (avoiding 2nd next()) are
           * only meaningful for some join strategies.
@@ -192,7 +192,7 @@ public abstract class BaseJoinStrategy implements JoinStrategy{
         mb.push(
                 innerTable.getTrulyTheBestAccessPath().
                         getCostEstimate().getBase().getEstimatedCost());
-        mb.push(tableVersion);
+        mb.push(tableVersion); // 31
         mb.push(innerTable instanceof ResultSetNode ? ((ResultSetNode)innerTable).printExplainInformationForActivation() : "");
         mb.push(pin);
         mb.push(splits);

@@ -1153,6 +1153,21 @@ public interface ResultSetFactory {
 											  String explainPlan)
 			throws StandardException;
 
+	NoPutResultSet getCrossJoinResultSet(NoPutResultSet leftResultSet,
+											  int leftNumCols,
+											  NoPutResultSet rightResultSet,
+											  int rightNumCols,
+											  GeneratedMethod joinClause,
+											  int resultSetNumber,
+											  boolean oneRowRightSide,
+											  boolean notExistsRightSide,
+											  boolean rightFromSSQ,
+											  double optimizerEstimatedRowCount,
+											  double optimizerEstimatedCost,
+											  String userSuppliedOptimizerOverrides,
+											  String explainPlan)
+			throws StandardException;
+
 	NoPutResultSet getMergeSortJoinResultSet(NoPutResultSet leftResultSet,
 											 int leftNumCols,
 											 NoPutResultSet rightResultSet,

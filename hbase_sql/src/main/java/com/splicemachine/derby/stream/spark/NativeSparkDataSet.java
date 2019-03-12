@@ -812,6 +812,27 @@ public class NativeSparkDataSet<V> implements DataSet<V> {
         }
     }
 
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Override
+    public DataSet<V> crossJoin(OperationContext context, DataSet<V> rightDataSet) {
+        try {
+            JoinOperation op = (JoinOperation) context.getOperation();
+            Dataset<Row> leftDF = dataset;
+            Dataset<Row> rightDF;
+            if (rightDataSet instanceof NativeSparkDataSet) {
+                rightDF = ((NativeSparkDataSet) rightDataSet).dataset;
+            } else {
+                rightDF = SpliceSpark.getSession().createDataFrame(
+                        ((SparkDataSet) rightDataSet).rdd.map(new LocatedRowToRowFunction()),
+                        context.getOperation().getRightOperation().getExecRowDefinition().schema());
+            }
+            return new NativeSparkDataSet(leftDF.crossJoin(rightDF));
+        }  catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     /**
      * Take a Splice DataSet and  convert to a Spark Dataset
      * doing a map

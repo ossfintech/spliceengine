@@ -1948,6 +1948,15 @@ public class JoinNode extends TableOperatorNode{
         return result;
     }
 
+    public boolean isCrossJoin() {
+        boolean result = false;
+        if (rightResultSet instanceof Optimizable) {
+            Optimizable nodeOpt=(Optimizable)rightResultSet;
+            result= nodeOpt.getTrulyTheBestAccessPath().getJoinStrategy().getJoinStrategyType() == JoinStrategy.JoinStrategyType.CROSS;
+        }
+        return result;
+    }
+
     public boolean
     isMergeJoin() {
         boolean result = false;
