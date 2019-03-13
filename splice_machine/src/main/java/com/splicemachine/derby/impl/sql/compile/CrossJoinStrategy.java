@@ -125,7 +125,7 @@ public class CrossJoinStrategy extends BaseJoinStrategy {
 
     @Override
     public void divideUpPredicateLists(Optimizable innerTable, OptimizablePredicateList originalRestrictionList, OptimizablePredicateList storeRestrictionList, OptimizablePredicateList nonStoreRestrictionList, OptimizablePredicateList requalificationRestrictionList, DataDictionary dd) throws StandardException {
-        originalRestrictionList.setPredicatesAndProperties(storeRestrictionList);
+        // originalRestrictionList.setPredicatesAndProperties(storeRestrictionList);
     }
 
     @Override
@@ -140,17 +140,34 @@ public class CrossJoinStrategy extends BaseJoinStrategy {
 
     @Override
     public OptimizablePredicateList getBasePredicates(OptimizablePredicateList predList, OptimizablePredicateList basePredicates, Optimizable innerTable) throws StandardException {
-        return null;
+        if (SanityManager.DEBUG) {
+            SanityManager.ASSERT(basePredicates.size() == 0,"The base predicate list should be empty.");
+        }
+
+        if (predList != null) {
+            predList.transferAllPredicates(basePredicates);
+            basePredicates.classify(innerTable, innerTable.getCurrentAccessPath().getConglomerateDescriptor());
+        }
+
+        /*
+         * We want all the join predicates to be included, so we just pass everything through and filter
+         * it out through the actual costing algorithm
+         */
+        return basePredicates;
     }
 
     @Override
     public double nonBasePredicateSelectivity(Optimizable innerTable, OptimizablePredicateList predList) throws StandardException {
-        return 0;
+        return 1.0;
     }
 
     @Override
     public void putBasePredicates(OptimizablePredicateList predList, OptimizablePredicateList basePredicates) throws StandardException {
-
+        for (int i = basePredicates.size() - 1; i >= 0; i--) {
+            OptimizablePredicate pred = basePredicates.getOptPredicate(i);
+            predList.addOptPredicate(pred);
+            basePredicates.removeOptPredicate(i);
+        }
     }
 
     /**
@@ -207,7 +224,7 @@ public class CrossJoinStrategy extends BaseJoinStrategy {
 
     @Override
     public int maxCapacity(int userSpecifiedCapacity, int maxMemoryPerTable, double perRowUsage) {
-        return 0;
+        return Integer.MAX_VALUE;
     }
 
     /**

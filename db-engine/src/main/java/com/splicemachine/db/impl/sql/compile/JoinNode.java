@@ -1779,7 +1779,7 @@ public class JoinNode extends TableOperatorNode{
             ColumnMappingUtils.updateColumnMappings(leftResultSet.getResultColumns(),nonLocalRefs.iterator());
         }
 
-        if(rightResultSet instanceof Optimizable && isHashableJoin(rightResultSet)){
+        if(rightResultSet instanceof Optimizable && (isHashableJoin(rightResultSet) || isCrossJoin())){
             // Look for unary path to FromBaseTable, to prune preds from nonStoreRestrictionList
             FromBaseTable table=null;
             if(rightResultSet instanceof ProjectRestrictNode){
