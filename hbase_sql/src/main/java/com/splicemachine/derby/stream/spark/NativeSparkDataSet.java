@@ -817,7 +817,6 @@ public class NativeSparkDataSet<V> implements DataSet<V> {
     @Override
     public DataSet<V> crossJoin(OperationContext context, DataSet<V> rightDataSet) {
         try {
-            JoinOperation op = (JoinOperation) context.getOperation();
             Dataset<Row> leftDF = dataset;
             Dataset<Row> rightDF;
             if (rightDataSet instanceof NativeSparkDataSet) {
@@ -827,7 +826,7 @@ public class NativeSparkDataSet<V> implements DataSet<V> {
                         ((SparkDataSet) rightDataSet).rdd.map(new LocatedRowToRowFunction()),
                         context.getOperation().getRightOperation().getExecRowDefinition().schema());
             }
-            return new NativeSparkDataSet(leftDF.crossJoin(rightDF));
+            return new NativeSparkDataSet(leftDF.crossJoin(rightDF), context);
         }  catch (Exception e) {
             throw new RuntimeException(e);
         }
