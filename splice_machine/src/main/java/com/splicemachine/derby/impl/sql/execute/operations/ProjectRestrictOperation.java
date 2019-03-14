@@ -360,7 +360,7 @@ public class ProjectRestrictOperation extends SpliceBaseOperation {
         DataSet<ExecRow> sourceSet = source.getDataSet(dsp);
         try {
             operationContext.pushScope();
-            if (hasFilterPred() || hasExpressions())
+            if (hasFilterPred() || hasExpressions())  //msirek-temp
 			    sourceSet = sourceSet.upgradeToSparkNativeDataSet(operationContext);
 			if (restrictionMethodName != null)
 				sourceSet = sourceSet.filter(new ProjectRestrictPredicateFunction<>(operationContext));

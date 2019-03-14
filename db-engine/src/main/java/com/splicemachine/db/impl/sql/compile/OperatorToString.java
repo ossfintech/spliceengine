@@ -172,7 +172,8 @@ public class OperatorToString {
                     String functionName = eon.sparkFunctionName();
 
                     // Splice extracts fractional seconds, but spark only extracts whole seconds.
-                    if (functionName.equals("SECOND"))
+                    if (functionName.equals("SECOND") || functionName.equals("WEEK") ||
+                        functionName.equals("WEEKDAY") || functionName.equals("WEEKDAYNAME"))
                         throwNotImplementedError();
                     else
                         return format("%s(%s)", functionName, opToString2(uop.getOperand()));
@@ -193,6 +194,19 @@ public class OperatorToString {
                         throwNotImplementedError();
 
                     return format("%s(%s)", functionName, opToString2(lengthOp.getOperand()));
+                }
+                else if (operand instanceof UnaryArithmeticOperatorNode) {
+                    UnaryArithmeticOperatorNode uao = (UnaryArithmeticOperatorNode) operand;
+                    String operator = uao.getOperatorString();
+                    if (operator.equals("+") || operator.equals("-"))
+                        return format("%s%s", uao.getOperatorString(), opToString2(uao.getOperand()));
+                    else
+                        return format("%s(%s)", uao.getOperatorString(), opToString2(uao.getOperand()));
+                }
+                else if (operand instanceof SimpleStringOperatorNode) {
+                    SimpleStringOperatorNode sso = (SimpleStringOperatorNode) operand;
+                    String operator = sso.getOperatorString();
+                    return format("%s(%s)", sso.getOperatorString(), opToString2(sso.getOperand()));
                 }
                 else
                     throwNotImplementedError();
@@ -242,6 +256,7 @@ public class OperatorToString {
             BinaryOperatorNode bop = (BinaryOperatorNode) operand;
             ValueNode leftOperand = bop.getLeftOperand();
             ValueNode rightOperand = bop.getRightOperand();
+            String leftOperandString = opToString2(leftOperand);
 
             if (SPARK_EXPRESSION.get()) {
                 if (operand instanceof ConcatenationOperatorNode)
@@ -261,6 +276,19 @@ public class OperatorToString {
                 }
                 else if (operand instanceof BinaryArithmeticOperatorNode) {
                     BinaryArithmeticOperatorNode bao = (BinaryArithmeticOperatorNode)operand;
+
+                    // Splice automatically builds a binary arithmetic expression
+                    // in the requested final data type.  For spark, we need to
+                    // provide an explicit CAST to get the same effect.
+                    if (leftOperand.getTypeId().getTypeFormatId() !=
+                        bao.getTypeId().getTypeFormatId() &&
+                        rightOperand.getTypeId().getTypeFormatId() !=
+                        bao.getTypeId().getTypeFormatId()) {
+                        leftOperandString = format("CAST(%s as %s)",
+                                                    leftOperandString,
+                                                     bao.getTypeServices().toSparkString());
+                    }
+
                     if (bao.getOperatorString() == "mod")
                         return format("mod(%s, %s)", opToString2(leftOperand),
                                                      opToString2(rightOperand));
@@ -275,12 +303,18 @@ public class OperatorToString {
                             opToString2(rightOperand));
                     }
                 }
+                else if (operand.getClass() == BinaryOperatorNode.class) {
+                    if (((BinaryOperatorNode) operand).isRepeat()) {
+                        return format("%s(%s, %s) ", bop.getOperatorString(),
+                          opToString2(bop.getLeftOperand()), opToString2(bop.getRightOperand()));
+                    }
+                }
                 else if (operand instanceof TimestampOperatorNode ||
                          operand instanceof SimpleLocaleStringOperatorNode)
                     throwNotImplementedError();
             }
 
-            return format("(%s %s %s)", opToString2(bop.getLeftOperand()),
+            return format("(%s %s %s)", leftOperandString,
                           bop.getOperatorString(), opToString2(bop.getRightOperand()));
         } else if (operand instanceof ArrayOperatorNode) {
             ArrayOperatorNode array = (ArrayOperatorNode) operand;
@@ -298,7 +332,9 @@ public class OperatorToString {
                                 opToString2(top.getLeftOperand())) ;
                 }
                 else if (operand.getClass() == TernaryOperatorNode.class) {
-                    if (top.getOperator().equals("LOCATE"))
+                    if (top.getOperator().equals("LOCATE") ||
+                        top.getOperator().equals("replace") ||
+                        top.getOperator().equals("substring") )
                         return format("%s(%s, %s, %s)",  top.getOperator(), opToString2(top.getReceiver()),
                                 opToString2(top.getLeftOperand()), opToString2(top.getRightOperand()));
                     else if (top.getOperator().equals("trim")) {
@@ -393,11 +429,15 @@ public class OperatorToString {
                     else if (dvd instanceof SQLDouble)
                         str = format("double(\'%s\')", cn.getValue().getString());
                     else if (dvd instanceof SQLInteger  ||
-                             dvd instanceof SQLSmallint ||
-                             dvd instanceof SQLTinyint  ||
                              dvd instanceof SQLDecimal  ||
                              dvd instanceof SQLBoolean)
                         str = cn.getValue().getString();
+                    else if (dvd instanceof SQLLongint  ||
+                             dvd instanceof SQLSmallint ||
+                             dvd instanceof SQLTinyint)
+                        str = format("CAST(%s as %s)",
+                                      cn.getValue().getString(),
+                                      cn.getTypeServices().toSparkString());
                     else
                         throwNotImplementedError();
                 }
@@ -488,21 +528,41 @@ public class OperatorToString {
                         StaticMethodCallNode smc = (StaticMethodCallNode) method;
                         StringBuilder sb = new StringBuilder();
                         String methodName = smc.getMethodName();
-                        boolean isFloorOrCeilFunc = false;
+                        boolean needsExtraClosingParens = false;
 
                         // Spark MONTHS_BETWEEN calculates fractional
                         // months, splice MONTH_BETWEEN does not.
-                        if (methodName.equals("MONTH_BETWEEN"))
+                        // Splice and spark use different rounding rules.
+                        if (methodName.equals("MONTH_BETWEEN") ||
+                            methodName.equals("REGEXP_LIKE") ||
+                            methodName.equals("ROUND"))
                             throwNotImplementedError();
                         else if (methodName.equals("toDegrees"))
+
                             methodName = "degrees";
+                        else if (methodName.equals("toRadians"))
+                            methodName = "radians";
+                        else if (methodName.equals("SIGN")) {
+                            methodName = "int(sign";
+                            needsExtraClosingParens = true;
+                        }
                         else if (methodName.equals("floor")) {
                             methodName = "double(floor";
-                            isFloorOrCeilFunc = true;
+                            needsExtraClosingParens = true;
+                        }
+                        else if (methodName.equals("RAND")) {
+                            JavaValueNode param = smc.getMethodParms()[0];
+                            if (!(param instanceof SQLToJavaValueNode))
+                                throwNotImplementedError();
+                            if (! (((SQLToJavaValueNode) param).getSQLValueNode() instanceof ConstantNode))
+                                throwNotImplementedError();
+                        }
+                        else if (methodName.equals("random")) {
+                            methodName = "rand";
                         }
                         else if (methodName.equals("ceil")) {
                             methodName = "double(ceil";
-                            isFloorOrCeilFunc = true;
+                            needsExtraClosingParens = true;
                         }
                         sb.append(format("%s(", methodName));
                         int i = 0;
@@ -515,7 +575,7 @@ public class OperatorToString {
                             sb.append(opToString2(vn));
                             i++;
                         }
-                        if (isFloorOrCeilFunc)
+                        if (needsExtraClosingParens)
                             sb.append(")");
                         sb.append(") ");
                         return sb.toString();
